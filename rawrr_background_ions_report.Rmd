@@ -1,0 +1,237 @@
+---
+title: "Background Ion Fragmentation Audit (Thermo .raw + rawrr)"
+author: "Metabolomics Utilities"
+date: "`r format(Sys.Date())`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+params:
+  raw_files: !r character()
+  mz_tolerance: 0.005
+  top_n: 20
+  min_precursor_mz: 80
+  max_precursor_mz: 1500
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 12,
+  fig.height = 6
+)
+```
+
+## Overview
+
+This report scans Thermo Scientific `.raw` files with **rawrr** and identifies precursor masses that were fragmented repeatedly.
+These recurring precursor m/z values are commonly background ions, contaminants, or persistent chemical noise.
+
+The report produces:
+
+1. A ranked table of the top recurring fragmented precursor m/z values.
+2. A bar plot showing how often each top precursor was fragmented.
+3. Fragmentation spectra (MS2) for those top precursor m/z groups.
+
+## Requirements
+
+```{r requirements}
+required_pkgs <- c("rawrr", "dplyr", "purrr", "tidyr", "ggplot2", "stringr", "forcats", "scales")
+missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, quietly = TRUE, FUN.VALUE = logical(1))]
+
+if (length(missing_pkgs) > 0) {
+  stop(
+    "Missing required packages: ", paste(missing_pkgs, collapse = ", "),
+    "\nInstall them before rendering this report."
+  )
+}
+```
+
+## Input files
+
+Provide input files either:
+
+- via `params$raw_files` when rendering, or
+- by editing the `manual_raw_files` vector below.
+
+```{r input-files}
+manual_raw_files <- character()
+
+raw_files <- unique(c(params$raw_files, manual_raw_files))
+raw_files <- raw_files[file.exists(raw_files)]
+
+if (length(raw_files) == 0) {
+  stop("No existing .raw files found. Provide paths in params$raw_files or manual_raw_files.")
+}
+
+raw_files
+```
+
+## Helper functions
+
+```{r helpers}
+library(rawrr)
+library(dplyr)
+library(purrr)
+library(tidyr)
+library(ggplot2)
+library(stringr)
+library(forcats)
+library(scales)
+
+extract_ms2_headers <- function(raw_file, min_mz, max_mz) {
+  idx <- rawrr::readIndex(raw_file)
+  ms2_scans <- idx$scan[idx$msOrder == "Ms2"]
+
+  if (length(ms2_scans) == 0) {
+    return(tibble())
+  }
+
+  hdr <- rawrr::readTrailer(raw_file, scan = ms2_scans)
+
+  precursor_col <- names(hdr)[str_detect(names(hdr), regex("Monoisotopic M/Z|Selected Ion m/z|MS2 Isolation", ignore_case = TRUE))]
+  if (length(precursor_col) == 0) {
+    stop("Could not identify precursor m/z column in trailer metadata for file: ", raw_file)
+  }
+  precursor_col <- precursor_col[[1]]
+
+  tibble(
+    file = raw_file,
+    scan = ms2_scans,
+    precursor_mz = suppressWarnings(as.numeric(hdr[[precursor_col]]))
+  ) %>%
+    filter(!is.na(precursor_mz)) %>%
+    filter(precursor_mz >= min_mz, precursor_mz <= max_mz)
+}
+
+bin_precursor_mz <- function(x, tolerance) {
+  round(x / tolerance) * tolerance
+}
+
+extract_spectrum_peaks <- function(raw_file, scan_no, precursor_bin, top_k = 300) {
+  sp <- rawrr::readSpectrum(raw_file, scan = scan_no)
+
+  tibble(
+    precursor_bin = precursor_bin,
+    file = raw_file,
+    scan = scan_no,
+    mz = sp[[1]]$mz,
+    intensity = sp[[1]]$intensities
+  ) %>%
+    filter(!is.na(mz), !is.na(intensity), intensity > 0) %>%
+    arrange(desc(intensity)) %>%
+    slice_head(n = top_k)
+}
+
+estimate_scan_tic <- function(raw_file, scan_no) {
+  sp <- rawrr::readSpectrum(raw_file, scan = scan_no)
+  sum(sp[[1]]$intensities, na.rm = TRUE)
+}
+```
+
+## Collect MS2 precursor events
+
+```{r collect-events}
+precursor_events <- map_dfr(
+  raw_files,
+  extract_ms2_headers,
+  min_mz = params$min_precursor_mz,
+  max_mz = params$max_precursor_mz
+)
+
+if (nrow(precursor_events) == 0) {
+  stop("No MS2 precursor events found in the provided files.")
+}
+
+precursor_events <- precursor_events %>%
+  mutate(precursor_bin = bin_precursor_mz(precursor_mz, params$mz_tolerance))
+
+precursor_summary <- precursor_events %>%
+  count(precursor_bin, name = "n_fragmented") %>%
+  arrange(desc(n_fragmented)) %>%
+  slice_head(n = params$top_n)
+
+precursor_summary
+```
+
+## Top recurring fragmented precursor masses
+
+```{r barplot-top-precursors}
+plot_df <- precursor_summary %>%
+  mutate(precursor_label = sprintf("%.4f", precursor_bin)) %>%
+  mutate(precursor_label = fct_reorder(precursor_label, n_fragmented))
+
+ggplot(plot_df, aes(x = precursor_label, y = n_fragmented)) +
+  geom_col(fill = "#2C7FB8") +
+  coord_flip() +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = sprintf("Top %d repeatedly fragmented precursor masses", params$top_n),
+    x = "Precursor m/z (binned)",
+    y = "Number of MS2 fragmentations"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+## Fragmentation spectra of top recurring precursor masses
+
+For each precursor m/z bin, one representative MS2 scan with the highest total ion current is selected and visualized.
+
+```{r spectra-top-precursors}
+top_precursor_events <- precursor_events %>%
+  semi_join(precursor_summary, by = "precursor_bin")
+
+representative_scans <- top_precursor_events %>%
+  mutate(scan_tic = map2_dbl(file, scan, estimate_scan_tic)) %>%
+  group_by(precursor_bin) %>%
+  slice_max(order_by = scan_tic, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+spectra_long <- pmap_dfr(
+  list(representative_scans$file, representative_scans$scan, representative_scans$precursor_bin),
+  extract_spectrum_peaks
+)
+
+if (nrow(spectra_long) == 0) {
+  stop("No spectral peaks extracted for representative MS2 scans.")
+}
+
+spectra_plot_df <- spectra_long %>%
+  mutate(precursor_label = sprintf("%.4f", precursor_bin)) %>%
+  group_by(precursor_label) %>%
+  mutate(rel_intensity = intensity / max(intensity, na.rm = TRUE) * 100) %>%
+  ungroup()
+
+ggplot(spectra_plot_df, aes(x = mz, y = rel_intensity)) +
+  geom_segment(aes(xend = mz, yend = 0), linewidth = 0.25, color = "#D95F0E") +
+  facet_wrap(~ precursor_label, scales = "free_x", ncol = 4) +
+  labs(
+    title = "Representative MS2 fragmentation spectra for top recurring precursor masses",
+    x = "Fragment m/z",
+    y = "Relative intensity (%)"
+  ) +
+  theme_minimal(base_size = 11)
+```
+
+## Optional export
+
+```{r export-summary}
+# write.csv(precursor_summary, "top_background_precursors.csv", row.names = FALSE)
+```
+
+## Rendering example
+
+Render from shell:
+
+```bash
+Rscript -e 'rmarkdown::render(
+  "rawrr_background_ions_report.Rmd",
+  params = list(
+    raw_files = c("/path/to/file1.raw", "/path/to/file2.raw"),
+    mz_tolerance = 0.005,
+    top_n = 20
+  )
+)'
+```
