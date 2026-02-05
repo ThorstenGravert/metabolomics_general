@@ -1,0 +1,18 @@
+Package: peakOtter
+Type: Package
+Title: **peakOtter** is my personal metabolomics toolkit inspired by sea otters.
+Version: 0.1.0
+Authors@R: c(
+    person(
+      "Thorsten Klaus Otto", "Gravert",
+      email = "thgr@cmbio.io",
+      role = c("aut", "cre")
+    )
+  )
+Description: **peakOtter** is a personal metabolomics toolkit for handling, inspecting, and curating LC–HRMS features — inspired by how otters move through a river: following the flow, picking out what matters, and letting the rest drift away.
+
+In metabolomics, raw data arrives as a fast-moving stream of peaks, noise, adducts, fragments, and artifacts.  
+`peakOtter` is about *grabbing the right peaks*, examining them carefully, and keeping only those that are worth carrying downstream.
+License: What license is it under?
+Encoding: UTF-8
+LazyData: true
