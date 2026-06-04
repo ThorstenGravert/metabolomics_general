@@ -128,16 +128,33 @@ build_injection_sequence <- function(
     dplyr::mutate(
       count = dplyr::row_number(),
       injection_number = count + (batch_info$injection_offset %||% 0L),
-      injection_number_chr = stringr::str_pad(injection_number, width = 3, pad = "0"),
+      injection_number_chr = stringr::str_pad(injection_number, width = 3, pad = "0")
+    ) |>
+    finalize_sequence_fields(batch_info) |>
+    dplyr::select(
+      count, injection_number, injection_number_chr, sample_name, final_sample_name,
+      sample_category, position, inj_vol, source_sample_id, source_sample_type,
+      method_lookup, instrument_method, file_name, export_path, comment
+    )
+
+  sequence
+}
+
+finalize_sequence_fields <- function(sequence, batch_info) {
+  sequence |>
+    dplyr::mutate(
       qc_flag = stringr::str_detect(sample_name, "^QC"),
       blank_flag = sample_name == "Blank",
       qc_count = cumsum(qc_flag),
       blank_count = cumsum(blank_flag),
-      final_sample_name = dplyr::case_when(
-        sample_name %in% c("SST1", "SST2") ~ paste0(sample_name, "_", batch_info$column_id),
-        sample_name == "QC" ~ sprintf("QC_%03d", qc_count),
-        sample_name == "Blank" ~ sprintf("Blank_%03d", blank_count),
-        TRUE ~ trim_sample_export_id(sample_name)
+      final_sample_name = dplyr::coalesce(
+        dplyr::na_if(final_sample_name %||% NA_character_, ""),
+        dplyr::case_when(
+          sample_name %in% c("SST1", "SST2") ~ paste0(sample_name, "_", batch_info$column_id),
+          sample_name == "QC" ~ sprintf("QC_%03d", qc_count),
+          sample_name == "Blank" ~ sprintf("Blank_%03d", blank_count),
+          TRUE ~ trim_sample_export_id(sample_name)
+        )
       ),
       method_lookup = dplyr::case_when(
         stringr::str_detect(sample_name, "MSMSincl") & batch_info$acquisition_mode == "POS" ~ paste(batch_info$method_family, batch_info$instrument, "POS-MSMSincl", sep = "-"),
@@ -149,7 +166,7 @@ build_injection_sequence <- function(
       instrument_method = dplyr::if_else(
         identical(batch_info$standard_status, "Nonstandard"),
         "",
-        batch_info$instrument_method %||% ""
+        instrument_method %||% batch_info$instrument_method %||% ""
       ),
       file_name_prefix = paste(
         batch_info$start_date_code,
@@ -162,13 +179,7 @@ build_injection_sequence <- function(
       file_name = paste0(file_name_prefix, "-", final_sample_name),
       export_path = batch_info$export_path %||% make_project_path(batch_info)
     ) |>
-    dplyr::select(
-      count, injection_number, injection_number_chr, sample_name, final_sample_name,
-      sample_category, position, inj_vol, source_sample_id, source_sample_type,
-      method_lookup, instrument_method, file_name, export_path, comment
-    )
-
-  sequence
+    dplyr::select(-qc_flag, -blank_flag, -qc_count, -blank_count, -file_name_prefix)
 }
 
 build_export_table <- function(sequence, batch_info) {

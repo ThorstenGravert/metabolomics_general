@@ -105,6 +105,22 @@ validate_injection_workflow <- function(samples, sequence, batch_info, settings)
     messages <- dplyr::bind_rows(messages, add_message("Error", "sequence", "Generated sequence contains empty critical fields."))
   }
 
+  invalid_positions <- sequence |>
+    dplyr::filter(!vapply(position, is_valid_position, logical(1), container_type = batch_info$autosampler %||% "Plate"))
+
+  if (nrow(invalid_positions) > 0) {
+    messages <- dplyr::bind_rows(messages, add_message("Error", "position", "One or more sequence positions are invalid for the selected container format."))
+  }
+
+  duplicate_final_names <- sequence |>
+    dplyr::filter(!is.na(final_sample_name), nzchar(final_sample_name)) |>
+    dplyr::count(final_sample_name) |>
+    dplyr::filter(n > 1)
+
+  if (nrow(duplicate_final_names) > 0) {
+    messages <- dplyr::bind_rows(messages, add_message("Warning", "final_sample_name", "Duplicate final sample names were found in the sequence preview."))
+  }
+
   export_table <- build_export_table(sequence, batch_info)
   if (!identical(names(export_table), export_column_names)) {
     messages <- dplyr::bind_rows(messages, add_message("Error", "export", "Export column names or order do not match the LC template."))

@@ -75,7 +75,7 @@ mod_plate_map_server <- function(id, samples, sequence, batch_info) {
               if (is.na(label) || identical(label, "NA")) {
                 label <- ""
               }
-              shiny::tags$td(style = paste("background:", fill, "; min-width: 90px; color: #f8f9fa;"), label)
+              shiny::tags$td(style = paste("background:", fill, "; min-width: 90px; color: #091159;"), label)
             })
           )
         })

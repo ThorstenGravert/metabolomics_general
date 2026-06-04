@@ -5,23 +5,35 @@ mod_sample_input_ui <- function(id) {
     shiny::fluidRow(
       shiny::column(
         width = 6,
-        shiny::textAreaInput(
-          ns("pasted_samples"),
-          "Paste sample table",
-          rows = 14,
-          placeholder = "Paste a table copied from Excel here"
+        shiny::wellPanel(
+          shiny::tags$h4("Paste a sample table"),
+          ui_labeled_control(
+            shiny::textAreaInput(
+              ns("pasted_samples"),
+              "Paste sample table",
+              rows = 14,
+              placeholder = "Paste a table copied from Excel here"
+            ),
+            "Paste directly from Excel. The app accepts common column names such as Sample ID, Sample type, Plate, Well, Batch, and Comment."
+          ),
+          shiny::actionButton(ns("parse_paste"), "Parse pasted table")
         ),
-        shiny::actionButton(ns("parse_paste"), "Parse pasted table")
       ),
       shiny::column(
         width = 6,
-        shiny::fileInput(ns("sample_file"), "Upload sample file", accept = c(".csv", ".xlsx", ".xls")),
-        shiny::helpText("Supported inputs: simple CSV tables and the Sample Submission Example workbook format.")
+        shiny::wellPanel(
+          shiny::tags$h4("Upload a sample file"),
+          ui_labeled_control(
+            shiny::fileInput(ns("sample_file"), "Upload sample file", accept = c(".csv", ".xlsx", ".xls")),
+            "Supported inputs are simple CSV tables and the Sample Submission workbook format."
+          )
+        )
       )
     ),
     shiny::fluidRow(
       shiny::column(
         width = 12,
+        shiny::tags$h4("Imported sample preview"),
         DT::DTOutput(ns("sample_preview"))
       )
     )

@@ -151,7 +151,7 @@ parse_sample_manifest <- function(path, sheet = NULL) {
     janitor::clean_names()
 
   expected <- c(
-    "internal_sample_id", "sample_number", "sample_present_n",
+    "internal_sample_id", "sample_number", "sample_present_y_n",
     "discrepancy_comment", "sample_name", "plate_or_box_id",
     "position_in_plate_or_box", "sample_type", "host", "buffer_media",
     "sample_amount", "storage_temperature", "service_type", "comments"
@@ -164,7 +164,7 @@ parse_sample_manifest <- function(path, sheet = NULL) {
 
   manifest |>
     dplyr::mutate(
-      sample_present_n = stringr::str_to_upper(stringr::str_trim(as.character(sample_present_n))),
+      sample_present_n = stringr::str_to_upper(stringr::str_trim(as.character(sample_present_y_n))),
       internal_sample_id = stringr::str_trim(as.character(internal_sample_id)),
       sample_name = stringr::str_trim(as.character(sample_name)),
       plate_or_box_id = stringr::str_trim(as.character(plate_or_box_id)),
@@ -172,8 +172,8 @@ parse_sample_manifest <- function(path, sheet = NULL) {
       comments = stringr::str_trim(as.character(comments))
     ) |>
     dplyr::filter(
-      !is.na(internal_sample_id) | !is.na(sample_name),
-      sample_present_n %in% c("Y", "YES", ""),
+      !is.na(internal_sample_id),
+      sample_present_y_n %in% c("Y", "YES", ""),
       stringr::str_detect(internal_sample_id, "^(SA|PB)")
     ) |>
     dplyr::transmute(
@@ -296,6 +296,30 @@ is_valid_well <- function(well, container_type = "Plate") {
   parsed$row[[1]] %in% spec$rows && parsed$column[[1]] %in% spec$columns
 }
 
+is_valid_position <- function(position, container_type = "Plate") {
+  if (is.na(position) || !nzchar(position)) {
+    return(FALSE)
+  }
+
+  parts <- stringr::str_split_fixed(position, ":", 2)
+  if (ncol(parts) < 2 || !nzchar(parts[[1, 1]]) || !nzchar(parts[[1, 2]])) {
+    return(FALSE)
+  }
+
+  is_valid_well(parts[[1, 2]], container_type = container_type)
+}
+
 `%||%` <- function(x, y) {
   if (is.null(x)) y else x
+}
+
+ui_help_text <- function(text) {
+  shiny::helpText(style = "margin-top: -8px; margin-bottom: 12px; color: #4f5b66;", text)
+}
+
+ui_labeled_control <- function(control, help_text = NULL) {
+  shiny::tagList(
+    control,
+    if (!is.null(help_text)) ui_help_text(help_text)
+  )
 }

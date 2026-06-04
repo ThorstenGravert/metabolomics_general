@@ -20,6 +20,10 @@ invisible(lapply(list.files("R", pattern = "\\.[Rr]$", full.names = TRUE), sourc
 
 ui <- bslib::page_navbar(
   bslib::nav_panel(
+    "How to use",
+    mod_how_to_use_ui("how_to_use")
+  ),
+  bslib::nav_panel(
     "Sample input",
     mod_sample_input_ui("sample_input")
   ),
@@ -73,10 +77,16 @@ server <- function(input, output, session) {
     )
   })
 
+  editable_sequence <- mod_sequence_preview_server(
+    "sequence_preview",
+    sequence = sequence_data,
+    batch_info = batch_info
+  )
+
   validation_messages <- shiny::reactive({
     validate_injection_workflow(
       samples = normalized_samples(),
-      sequence = sequence_data(),
+      sequence = editable_sequence(),
       batch_info = batch_info(),
       settings = sequence_settings()
     )
@@ -93,15 +103,10 @@ server <- function(input, output, session) {
     batch_info = batch_info
   )
 
-  mod_sequence_preview_server(
-    "sequence_preview",
-    sequence = sequence_data
-  )
-
   mod_validation_panel_server(
     "validation_panel",
     validations = validation_messages,
-    sequence = sequence_data,
+    sequence = editable_sequence,
     batch_info = batch_info,
     export_ready = export_ready
   )
