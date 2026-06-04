@@ -1,0 +1,5 @@
+Sample ID,Sample type,Plate,Well,Batch,Comment
+SA000001,sample,R,A1,B1,Study sample
+SA000002,sample,R,A2,B1,Study sample
+SA000003,sample,R,A3,B1,Study sample
+PB000001,blank,G,H12,B1,Process blank
