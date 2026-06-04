@@ -141,6 +141,22 @@ build_injection_sequence <- function(
 }
 
 finalize_sequence_fields <- function(sequence, batch_info) {
+  use_blank_instrument_method <- identical(batch_info$standard_status, "Nonstandard")
+  default_instrument_method <- batch_info$instrument_method %||% ""
+  default_export_path <- batch_info$export_path %||% make_project_path(batch_info)
+
+  if (!"final_sample_name" %in% names(sequence)) {
+    sequence$final_sample_name <- NA_character_
+  }
+
+  if (!"instrument_method" %in% names(sequence)) {
+    sequence$instrument_method <- NA_character_
+  }
+
+  if (!"export_path" %in% names(sequence)) {
+    sequence$export_path <- NA_character_
+  }
+
   sequence |>
     dplyr::mutate(
       qc_flag = stringr::str_detect(sample_name, "^QC"),
@@ -148,7 +164,7 @@ finalize_sequence_fields <- function(sequence, batch_info) {
       qc_count = cumsum(qc_flag),
       blank_count = cumsum(blank_flag),
       final_sample_name = dplyr::coalesce(
-        dplyr::na_if(final_sample_name %||% NA_character_, ""),
+        dplyr::na_if(final_sample_name, ""),
         dplyr::case_when(
           sample_name %in% c("SST1", "SST2") ~ paste0(sample_name, "_", batch_info$column_id),
           sample_name == "QC" ~ sprintf("QC_%03d", qc_count),
@@ -163,11 +179,11 @@ finalize_sequence_fields <- function(sequence, batch_info) {
         stringr::str_detect(sample_name, "MSMS") & batch_info$acquisition_mode == "NEG" ~ paste(batch_info$method_family, batch_info$instrument, "NEG-MSMS", sep = "-"),
         TRUE ~ paste(batch_info$method_family, batch_info$instrument, batch_info$acquisition_mode, sep = "-")
       ),
-      instrument_method = dplyr::if_else(
-        identical(batch_info$standard_status, "Nonstandard"),
-        "",
-        instrument_method %||% batch_info$instrument_method %||% ""
-      ),
+      instrument_method = if (use_blank_instrument_method) {
+        ""
+      } else {
+        dplyr::coalesce(dplyr::na_if(instrument_method, ""), default_instrument_method)
+      },
       file_name_prefix = paste(
         batch_info$start_date_code,
         batch_info$instrument,
@@ -177,7 +193,7 @@ finalize_sequence_fields <- function(sequence, batch_info) {
         sep = "-"
       ),
       file_name = paste0(file_name_prefix, "-", final_sample_name),
-      export_path = batch_info$export_path %||% make_project_path(batch_info)
+      export_path = dplyr::coalesce(dplyr::na_if(export_path, ""), default_export_path)
     ) |>
     dplyr::select(-qc_flag, -blank_flag, -qc_count, -blank_count, -file_name_prefix)
 }

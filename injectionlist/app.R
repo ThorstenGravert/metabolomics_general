@@ -1,6 +1,6 @@
 required_packages <- c(
   "shiny", "bslib", "DT", "readr", "dplyr", "tidyr", "stringr",
-  "purrr", "tibble", "lubridate", "janitor", "shinyvalidate"
+  "purrr", "tibble", "lubridate", "janitor"
 )
 
 missing_packages <- required_packages[!vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)]
